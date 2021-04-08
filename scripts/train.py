@@ -55,7 +55,7 @@ if __name__ == '__main__':
 
     tune.run(ppo.PPOTrainer,
         local_dir=args.logdir,
-        name="gmm5_hparam_tunning_large_no_kl_cutv3",
+        name="gmm5_tuned",
         num_samples=args.samples,
         stop={'episode_reward_mean': 700}, # This is convergence for this version of half cheta
         config={
@@ -71,12 +71,18 @@ if __name__ == '__main__':
             "observation_filter": "MeanStdFilter",
             "lambda": 0.99,
             "gamma": 0.95,
+
+            # TUNED
+            "clip_param": 0.23,
+            "lr": 3e-5,
+            "entropy_coeff": 0.18,
+            # TUNED
+
             "model": {
                 "custom_action_dist": "gmm",
                 "vf_share_layers": False,
                 "custom_model_config": {
                     "num_gaussians": 5,
-                    "monte_samples": 1
+                    "monte_samples": 10
                 },
-            }},
-            scheduler=pbt)
+            }})

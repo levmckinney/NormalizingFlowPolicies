@@ -36,6 +36,8 @@ class TorchGaussianMixtureDistribution(TorchDistributionWrapper):
         actions = actions.view(self.batch_size, 1, -1) # batch_size x 1 (broadcast to num gaussians) x action_dim
         mix_lps = self.cat.logits # batch_size x num_gaussians x action_dim
         normal_lps = self.normals.log_prob(actions) # batch_size x num_gaussians x action_dim
+        assert not torch.isnan(mix_lps).any(), "output nan aborting"
+        assert not torch.isnan(normal_lps).any(), "output nan aborting"
         return torch.logsumexp(mix_lps + normal_lps, dim=1) # reduce along num gaussians
 
     def deterministic_sample(self) -> torch.Tensor:
@@ -60,6 +62,7 @@ class TorchGaussianMixtureDistribution(TorchDistributionWrapper):
         """
         rsamples = self.__rsamples().unbind(0)
         log_ratios = torch.stack([self.logp(rsample) - q.logp(rsample) for rsample in rsamples])
+        assert not torch.isnan(log_ratios).any(), "output nan aborting"
         return log_ratios.mean(0)
 
     def entropy(self) -> torch.Tensor:
@@ -67,6 +70,7 @@ class TorchGaussianMixtureDistribution(TorchDistributionWrapper):
         """
         rsamples = self.__rsamples().unbind(0)
         log_ps = torch.stack([self.logp(rsample) for rsample in rsamples])
+        assert not torch.isnan(log_ps).any(), "output nan aborting"
         return log_ps.mean(0)
 
     def sample(self):
