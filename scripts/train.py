@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     pbt = PopulationBasedTraining(
         time_attr='timesteps_total',
-        metric="episode_reward_mean",
+        metric="episode_reward_max",
         mode="max",
         perturbation_interval=args.t_ready,
         resample_probability=args.perturb,
@@ -49,15 +49,15 @@ if __name__ == '__main__':
         hyperparam_mutations={
             "clip_param": tune.uniform(0.1, 0.5),
             "lr": tune.loguniform(1e-3, 1e-5),
-            "entropy_coeff": tune.uniform(0, 0.2),
+            "entropy_coeff": tune.loguniform(2e-4, 2e-1),
         },
         custom_explore_fn=explore)
 
     tune.run(ppo.PPOTrainer,
         local_dir=args.logdir,
-        name="gmm5_tuned",
+        name="gmm5_max_reward_tuning",
         num_samples=args.samples,
-        stop={'episode_reward_mean': 700}, # This is convergence for this version of half cheta
+        stop={'episode_reward_mean': 400, "timesteps_total": 3e6}, # This is convergence for this version of half cheta
         config={
             "env": "HalfCheetahPyBulletEnv-v0",
             "num_workers": 10,
@@ -73,9 +73,9 @@ if __name__ == '__main__':
             "gamma": 0.95,
 
             # TUNED
-            "clip_param": 0.23,
-            "lr": 3e-5,
-            "entropy_coeff": 0.18,
+            #"clip_param": 0.23,
+            #"lr": 3e-5,
+            #"entropy_coeff": 0.18,
             # TUNED
 
             "model": {
@@ -85,4 +85,5 @@ if __name__ == '__main__':
                     "num_gaussians": 5,
                     "monte_samples": 10
                 },
-            }})
+            }},
+            scheduler=pbt)
