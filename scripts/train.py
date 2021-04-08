@@ -48,15 +48,14 @@ if __name__ == '__main__':
         # Specifies the search space for these hyperparams
         hyperparam_mutations={
             "clip_param": tune.uniform(0.1, 0.5),
-            "kl_target": tune.uniform(0.003, 0.03),
             "lr": tune.loguniform(1e-3, 1e-5),
-            "entropy_coeff": tune.uniform(0, 0.5),
+            "entropy_coeff": tune.uniform(0, 0.2),
         },
         custom_explore_fn=explore)
 
     tune.run(ppo.PPOTrainer,
         local_dir=args.logdir,
-        name="gmm5_hparam_tunning_large_run_1",
+        name="gmm5_hparam_tunning_large_no_kl_cutv2",
         num_samples=args.samples,
         stop={'episode_reward_mean': 700}, # This is convergence for this version of half cheta
         config={
@@ -77,7 +76,7 @@ if __name__ == '__main__':
                 "vf_share_layers": False,
                 "custom_model_config": {
                     "num_gaussians": 5,
-                    "monte_samples": 10
+                    "monte_samples": 100
                 },
             }},
             scheduler=pbt)
