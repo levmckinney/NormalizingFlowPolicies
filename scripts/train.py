@@ -49,13 +49,13 @@ if __name__ == '__main__':
         hyperparam_mutations={
             "clip_param": tune.uniform(0.1, 0.5),
             "lr": tune.loguniform(1e-3, 1e-5),
-            "entropy_coeff": tune.loguniform(2e-4, 2e-1),
+            "entropy_coeff": tune.loguniform(2e-4, 1e-1),
         },
         custom_explore_fn=explore)
 
     tune.run(ppo.PPOTrainer,
         local_dir=args.logdir,
-        name="gmm5_max_reward_tuning",
+        name="gmm5_max_reward_tuningv2",
         num_samples=args.samples,
         stop={'episode_reward_mean': 400, "timesteps_total": 3e6}, # This is convergence for this version of half cheta
         config={
