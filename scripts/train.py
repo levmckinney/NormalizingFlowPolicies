@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     pbt = PopulationBasedTraining(
         time_attr='timesteps_total',
-        metric="episode_reward_max",
+        metric="episode_reward_mean",
         mode="max",
         perturbation_interval=args.t_ready,
         resample_probability=args.perturb,
@@ -55,7 +55,7 @@ if __name__ == '__main__':
 
     tune.run(ppo.PPOTrainer,
         local_dir=args.logdir,
-        name="gmm5_max_reward_tuningv2",
+        name="gmm5_mean_reward_tuningv3_model_switch",
         num_samples=args.samples,
         stop={'episode_reward_mean': 400, "timesteps_total": 3e6}, # This is convergence for this version of half cheta
         config={
@@ -81,6 +81,9 @@ if __name__ == '__main__':
             "model": {
                 "custom_action_dist": "gmm",
                 "vf_share_layers": False,
+                "fcnet_activation": "tanh",
+                "free_log_std": True,
+                "fcnet_hiddens": [64, 64],
                 "custom_model_config": {
                     "num_gaussians": 5,
                     "monte_samples": 10
