@@ -1,12 +1,13 @@
 from math import prod
 from pickle import NONE
+from rlflows.models import NormalizingFlowsPolicy
 from typing import List
 import torch
 from ray.rllib.models import ModelCatalog
 from ray.rllib.models.torch.torch_action_dist import TorchDistributionWrapper
 from ray.rllib.models.action_dist import ActionDistribution
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
-from torch.distributions import Categorical, Normal, Independent
+from torch.distributions import Categorical, Normal, Independent, TransformedDistribution
 
 
 class TorchGaussianMixtureDistribution(TorchDistributionWrapper):
@@ -27,10 +28,7 @@ class TorchGaussianMixtureDistribution(TorchDistributionWrapper):
         self.sigmas = torch.exp(inputs[:, 1, :, :]) # batch_size x num_gaussians x action_dim
         
         self.cat = Categorical(torch.ones(self.batch_size, self.num_gaussians, device=inputs.device, requires_grad=False))
-        try:
-            self.normals = Independent(Normal(self.means, self.sigmas), 1)
-        except ValueError as e:
-            raise Exception(f"shape: {self.means.shape}, value: {self.means}")
+        self.normals = Independent(Normal(self.means, self.sigmas), 1)
 
     def logp(self, actions: torch.Tensor):
         actions = actions.view(self.batch_size, 1, -1) # batch_size x 1 (broadcast to num gaussians) x action_dim
@@ -69,7 +67,7 @@ class TorchGaussianMixtureDistribution(TorchDistributionWrapper):
         """ H(self) estimated with monte carlo sampling
         """
         rsamples = self.__rsamples().unbind(0)
-        log_ps = torch.stack([self.logp(rsample) for rsample in rsamples])
+        log_ps = torch.stack([-self.logp(rsample) for rsample in rsamples])
         assert not torch.isnan(log_ps).any(), "output nan aborting"
         return log_ps.mean(0)
 
@@ -84,5 +82,49 @@ class TorchGaussianMixtureDistribution(TorchDistributionWrapper):
         assert len(self.last_sample.shape) == 2, f"shape, {self.last_sample.shape}"
         return self.last_sample
 
-
 ModelCatalog.register_custom_action_dist("gmm", TorchGaussianMixtureDistribution)
+
+class TorchFlowDistribution(TorchDistributionWrapper):
+    # https://github.com/ray-project/ray/blob/be62444bc5924c61d69bb6aec62f967e531e768c/rllib/examples/models/autoregressive_action_dist.py
+    @staticmethod
+    def required_model_output_shape(action_space, model_config):
+        return prod(action_space.shape)
+
+    def __init__(self, inputs: torch.Tensor, model: NormalizingFlowsPolicy):
+        #assert model instance_of NormalizingFlowsPolicy
+        super(TorchDistributionWrapper, self).__init__(inputs, model)
+        self.model = model
+        self.batch_size, self.action_dim = inputs.shape
+        self.device = inputs.device
+        self.base_dist = Independent(
+            Normal(
+                torch.zeros(self.batch_size, self.action_dim, device=self.device), 
+                torch.ones(self.batch_size, self.action_dim, device=self.device)),
+            1)
+        self.monte_samples = model.model_config['custom_model_config']['monte_samples']
+        self.flow = model.get_flow(inputs)
+        self.dist = TransformedDistribution(self.base_dist, self.flow)
+    
+    def deterministic_sample(self) -> torch.Tensor:
+        self.last_sample = self.flow(torch.zeros(self.batch_size, self.action_dim, device=self.device))
+        return self.last_sample
+
+
+    def kl(self, q: ActionDistribution) -> torch.Tensor:
+        """ KL(self || q) estimated with monte carlo sampling
+        """
+        rsamples = [self.dist.rsample() for _ in range(self.monte_samples)]
+        log_ratios = torch.stack([self.logp(rsample) - q.logp(rsample) for rsample in rsamples])
+        assert not torch.isnan(log_ratios).any(), "output nan aborting"
+        return log_ratios.mean(0)
+
+    def entropy(self) -> torch.Tensor:
+        """ H(self) estimated with monte carlo sampling
+        """
+        # TODO make this more efficient 
+        rsamples = [self.dist.rsample() for _ in range(self.monte_samples)]
+        log_ps = torch.stack([-self.logp(rsample) for rsample in rsamples])
+        assert not torch.isnan(log_ps).any(), "output nan aborting"
+        return log_ps.mean(0)
+
+ModelCatalog.register_custom_action_dist("flow_dist", TorchFlowDistribution)

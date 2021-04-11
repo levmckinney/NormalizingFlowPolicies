@@ -55,7 +55,7 @@ if __name__ == '__main__':
 
     tune.run(ppo.PPOTrainer,
         local_dir=args.logdir,
-        name="gmm5_mean_reward_tuningv3_model_switch_ent_fixed",
+        name="flow_tests",
         num_samples=args.samples,
         stop={'episode_reward_mean': 400, "timesteps_total": 3e6}, # This is convergence for this version of half cheta
         config={
@@ -73,20 +73,23 @@ if __name__ == '__main__':
             "gamma": 0.95,
 
             # TUNED
-            #"clip_param": 0.23,
-            #"lr": 3e-5,
-            #"entropy_coeff": 0.18,
+            #"clip_param": 0.26,
+            #"lr": 4e-4,
+            #"entropy_coeff": 6e-4,
             # TUNED
 
             "model": {
-                "custom_action_dist": "gmm",
+                "custom_model": "flow_model",
+                "custom_action_dist": "flow_dist",
                 "vf_share_layers": False,
-                "fcnet_activation": "tanh",
+                "fcnet_activation": "relu",
                 "free_log_std": True,
                 "fcnet_hiddens": [64, 64],
                 "custom_model_config": {
-                    "num_gaussians": 5,
-                    "monte_samples": 10
+                    "monte_samples": 10,
+                    "coupling_hidden_size": 3,
+                    "coupling_hidden_layers": 4,
+                    "num_coupling_layers": 4, 
+                    "inject_state_after":2,
                 },
-            }},
-            scheduler=pbt)
+            }})
