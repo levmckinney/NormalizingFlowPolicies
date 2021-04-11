@@ -55,7 +55,7 @@ if __name__ == '__main__':
 
     tune.run(ppo.PPOTrainer,
         local_dir=args.logdir,
-        name="flow_tests",
+        name="flow_tunev1",
         num_samples=args.samples,
         stop={'episode_reward_mean': 400, "timesteps_total": 3e6}, # This is convergence for this version of half cheta
         config={
@@ -67,7 +67,7 @@ if __name__ == '__main__':
             "num_gpus": 1.0,
             "remote_worker_envs": True,
             "train_batch_size": 60000,
-            "sgd_minibatch_size": 4096,
+            "sgd_minibatch_size": 8192,
             "observation_filter": "MeanStdFilter",
             "lambda": 0.99,
             "gamma": 0.95,
@@ -75,7 +75,7 @@ if __name__ == '__main__':
             # TUNED
             #"clip_param": 0.26,
             #"lr": 4e-4,
-            #"entropy_coeff": 6e-4,
+            #"entropy_coeff": 3e-3,
             # TUNED
 
             "model": {
@@ -89,7 +89,7 @@ if __name__ == '__main__':
                     "monte_samples": 10,
                     "coupling_hidden_size": 3,
                     "coupling_hidden_layers": 4,
-                    "num_coupling_layers": 4, 
+                    "num_flow_layers": 4, 
                     "inject_state_after":2,
                 },
-            }})
+            }}, scheduler=pbt)

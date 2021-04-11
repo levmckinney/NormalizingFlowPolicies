@@ -1,3 +1,5 @@
+from logging import NOTSET
+from typing import List
 from ray.rllib.models import ModelCatalog
 from ray.rllib.models.torch.fcnet import FullyConnectedNetwork
 from torch.distributions.transforms import Transform, ComposeTransform
@@ -24,12 +26,40 @@ class MLP(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.base_model(x)
 
-class CouplingLayer(Transform):
-    # https://pytorch.org/docs/stable/_modules/torch/distributions/transforms.html#AffineTransform
-    # TODO look into pytorch cache for this network/use existing implementation
-    bijective = True
-    def __init__(self, dimension: int, flipped: bool, hidden_size: int, hidden_layers: int):
-        super().__init__(cache_size=0)
+class FlowLayer(nn.Module):
+    def __init__(self, dimension: int):
+        """
+            Args:
+                dimension: the dimension of the flow
+        """
+        super().__init__()
+        self.dimension = dimension
+
+    def forward(self, x, inverse_mode=False, context=None):
+        """ Transform the variable x to f and return the transformations
+            log_abs_det_jac f. If in inverse mode return x transformed according to f^-1
+            and return log_abs_det_jac f^-1.
+            Layers may choose to condition on context.
+        """
+        ...
+
+class ConditioningLayer(FlowLayer):
+    """ Allows for the injection of additional context into a flow. 
+    """
+    def forward(self, x, inverse_mode=False, context=None):
+        log_abs_det = x[..., 0]*0
+        if context == None:
+            return x, log_abs_det
+        if inverse_mode:
+            return x - context, log_abs_det
+        else:
+            return x + context, log_abs_det
+
+class CouplingLayer(FlowLayer):
+    """ Implements RealNVP based coupling layer
+    """
+    def __init__(self, dimension: int, hidden_size: int, hidden_layers: int, flipped: bool = False):
+        super().__init__(dimension)
         assert dimension >= 2
         self.ident_size =  (dimension + flipped)//2
         self.trans_size = dimension - self.ident_size
@@ -37,62 +67,66 @@ class CouplingLayer(Transform):
         self.s = MLP(self.ident_size, self.trans_size, hidden_size, hidden_layers)
         self.t = MLP(self.ident_size, self.trans_size, hidden_size, hidden_layers)
     
-    @property
-    def codomain(self):
-        return constraints.independent(constraints.real, 1)
-
     def _pack(self, ident, trans):
-        z = torch.cat((ident, trans), dim=-1)
+        x = torch.cat((ident, trans), dim=-1)
         if self.flipped:
-            return z.flip(dims=(-1,))
+            return x.flip(dims=(-1,))
         else:
-            return z
+            return x
 
-    def _unpack(self, z):
+    def _unpack(self, x):
         if self.flipped:
-            z = z.flip(dims=(-1,))
-        return z[..., :self.ident_size], z[..., self.ident_size:]
+            x = x.flip(dims=(-1,))
+        return x[..., :self.ident_size], x[..., self.ident_size:]
 
-    def _call(self, x):
+    def forward(self, x, inverse_mode=False, context=None):
         ident, trans = self._unpack(x)
-        trans = trans * torch.exp(self.s(ident)) + self.t(ident)
-        return self._pack(ident, trans)
+        s = self.s(ident)
+        t = self.t(ident)
+        if inverse_mode:
+            assert trans.shape == t.shape, f"{t.shape}, {trans.shape}, {x.shape}"
+            trans = (trans - t) * torch.exp(-s)
+            log_abs_det = torch.sum(s, dim=-1)
+        else:
+            trans = trans * torch.exp(s) + t
+            log_abs_det = -torch.sum(s, dim=-1)
+        x = self._pack(ident, trans)
+        return x, log_abs_det
 
-    def _inverse(self, y):
-        ident, trans = self._unpack(y)
-        trans = (trans - self.t(ident)) * torch.exp(-self.s(ident))
-        return self._pack(ident, trans)
-    
-    def log_abs_det_jacobian(self, x, y):
-        ident, _ = self._unpack(x)
-        return torch.sum(self.s(ident), dim=-1)
+class ComposeFlows(FlowLayer):
+    def __init__(self, flows: List[FlowLayer]):
+        assert len(flows) > 0
+        dimension = flows[0].dimension
+        for flow in flows:
+            assert flow.dimension == dimension
+        super().__init__(dimension)
+        self.flows = nn.ModuleList(flows)
 
-class Injection(Transform):
-    bijective=True
-    def __init__(self, embeding: torch.Tensor):
-        super().__init__(cache_size=0)
-        self.embeding = embeding
-    
-    @property
-    def event_dim(self):
-        return 1
+    def forward(self, x, inverse_mode=False, context=None):
+        flows = reversed(self.flows) if inverse_mode else self.flows
+        total_log_abs_det = None
+        for flow in flows:
+            x, log_abs_det = flow(x, inverse_mode, context)
+            if total_log_abs_det is None:
+                total_log_abs_det = log_abs_det
+            else:
+                total_log_abs_det += log_abs_det
+        return x, total_log_abs_det
 
-    @property
-    def domain(self):
-        return constraints.independent(constraints.real, 1)
-    
-    @property
-    def codomain(self):
-        return constraints.independent(constraints.real, 1)
+class ConditionalCouplingFlow(FlowLayer):
+    def __init__(self, dimension: int, flow_layers: int, hidden_size: int, hidden_layers: int, inject_after: int=1):
+        super().__init__(dimension)
+        layers = []
+        for i in range(flow_layers):
+            layers.append(
+                CouplingLayer(dimension, hidden_size, hidden_layers, flipped=(i % 2 == 0)))
+            if i + 1 == inject_after:
+                layers.append(
+                    ConditioningLayer(dimension))
+        self.inner = ComposeFlows(layers)
 
-    def _call(self, x):
-        return x + self.embeding
-
-    def _inverse(self, y):
-        return y - self.embeding
-    
-    def log_abs_det_jacobian(self, x, y):
-        return x[..., 0]*0
+    def forward(self, x, inverse_mode=False, context=None):
+        return self.inner(x, inverse_mode, context)
 
 class NormalizingFlowsPolicy(FullyConnectedNetwork):
     # https://github.com/ray-project/ray/blob/be62444bc5924c61d69bb6aec62f967e531e768c/rllib/examples/models/autoregressive_action_model.py#L87
@@ -102,23 +136,13 @@ class NormalizingFlowsPolicy(FullyConnectedNetwork):
         super().__init__(obs_space, action_space, num_outputs, model_config, name)
         self.coupling_hidden_size = model_config['custom_model_config'].get('coupling_hidden_size')
         self.coupling_hidden_layers = model_config['custom_model_config'].get('coupling_hidden_layers')
-        self.num_coupling_layers = model_config['custom_model_config'].get('num_coupling_layers')
+        self.num_flow_layers = model_config['custom_model_config'].get('num_flow_layers')
         self.inject_state_after = model_config['custom_model_config'].get('inject_state_after')
-
-        flow_layers = []
-        identity_left = True
-        for _ in range(self.num_coupling_layers):
-            flow_layers.append(
-                CouplingLayer(num_outputs, identity_left, self.coupling_hidden_size, self.coupling_hidden_layers)
-            )
-            identity_left = not identity_left
-        self.flow_layers = torch.nn.ModuleList(flow_layers)
-        print(self)
-
-    def get_flow(self, state_embeding: torch.Tensor) -> ComposeTransform:
-        return ComposeTransform(
-            self.flow_layers[:self.inject_state_after] 
-            + [Injection(state_embeding)] 
-            + self.flow_layers[self.inject_state_after:])
+        self.flow = ConditionalCouplingFlow(
+            num_outputs, 
+            self.num_flow_layers, 
+            self.coupling_hidden_size,
+            self.coupling_hidden_layers, 
+            self.inject_state_after)
 
 ModelCatalog.register_custom_model("flow_model", NormalizingFlowsPolicy)

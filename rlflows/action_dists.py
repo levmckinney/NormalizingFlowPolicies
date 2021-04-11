@@ -91,40 +91,51 @@ class TorchFlowDistribution(TorchDistributionWrapper):
         return prod(action_space.shape)
 
     def __init__(self, inputs: torch.Tensor, model: NormalizingFlowsPolicy):
-        #assert model instance_of NormalizingFlowsPolicy
         super(TorchDistributionWrapper, self).__init__(inputs, model)
         self.model = model
         self.batch_size, self.action_dim = inputs.shape
         self.device = inputs.device
-        self.base_dist = Independent(
-            Normal(
+        self.base_dist = Normal(
                 torch.zeros(self.batch_size, self.action_dim, device=self.device), 
-                torch.ones(self.batch_size, self.action_dim, device=self.device)),
-            1)
+                torch.ones(self.batch_size, self.action_dim, device=self.device))
         self.monte_samples = model.model_config['custom_model_config']['monte_samples']
-        self.flow = model.get_flow(inputs)
-        self.dist = TransformedDistribution(self.base_dist, self.flow)
+        self.zero = torch.zeros(self.batch_size, self.action_dim, device=self.device)
     
+    def logp(self, actions: torch.Tensor) -> torch.Tensor:
+        z, log_abs_det = self.model.flow(actions, context=self.inputs, inverse_mode=True)
+        logp = self.base_dist.log_prob(z).sum(-1)
+        return logp + log_abs_det
+
     def deterministic_sample(self) -> torch.Tensor:
-        self.last_sample = self.flow(torch.zeros(self.batch_size, self.action_dim, device=self.device))
+        self.last_sample, _ = self.model.flow(self.zero, context=self.inputs)
         return self.last_sample
 
+    def sample(self):
+        z = self.base_dist.sample()
+        self.last_sample, _ = self.model.flow(z, context=self.inputs)
+        return self.last_sample
+
+    def __rsamples_logps(self):
+        base_samples = self.base_dist.sample((self.monte_samples,))
+        logp_base_samples = self.base_dist.log_prob(base_samples).sum(-1)
+        rsamples, logdet = self.model.flow(base_samples, context=self.inputs.unsqueeze(0))
+        logps = logp_base_samples + logdet
+        return rsamples, logps 
 
     def kl(self, q: ActionDistribution) -> torch.Tensor:
         """ KL(self || q) estimated with monte carlo sampling
         """
-        rsamples = [self.dist.rsample() for _ in range(self.monte_samples)]
-        log_ratios = torch.stack([self.logp(rsample) - q.logp(rsample) for rsample in rsamples])
+        rsamples, logps = self.__rsamples_logps()
+        logp_rsamples = zip(logps.unbind(0), rsamples.unbind(0))
+        log_ratios = torch.stack([logp - q.logp(rsample) for (logp, rsample) in logp_rsamples])
         assert not torch.isnan(log_ratios).any(), "output nan aborting"
         return log_ratios.mean(0)
 
     def entropy(self) -> torch.Tensor:
         """ H(self) estimated with monte carlo sampling
         """
-        # TODO make this more efficient 
-        rsamples = [self.dist.rsample() for _ in range(self.monte_samples)]
-        log_ps = torch.stack([-self.logp(rsample) for rsample in rsamples])
-        assert not torch.isnan(log_ps).any(), "output nan aborting"
-        return log_ps.mean(0)
+        _, logps = self.__rsamples_logps()
+        assert not torch.isnan(logps).any(), "output nan aborting" 
+        return -logps.mean(0)
 
 ModelCatalog.register_custom_action_dist("flow_dist", TorchFlowDistribution)

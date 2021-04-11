@@ -15,7 +15,7 @@ setuptools.setup(
         'torch',
         'ray[rllib]',
         'GPy',
-        'sklearn'
+        'sklearn',
     ],
     packages=setuptools.find_packages(),
     classifiers=[
