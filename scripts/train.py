@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 from ray import tune
 from ray.tune.schedulers.pb2 import PopulationBasedTraining
 from ray.tune.registry import register_env
+import yaml
 
 # Based on https://docs.ray.io/en/master/tune/examples/pb2_ppo_example.html
 
@@ -31,10 +32,16 @@ def explore(config):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--logdir', type=str)
+    parser.add_argument('--config', type=str)
+    parser.add_argument('--tune', action='store_true', type=bool)
     parser.add_argument('--samples', type=int, default=10)
     parser.add_argument('--t_ready', type=int, default=50000)
     parser.add_argument('--perturb', type=float, default=0.25)
     args = parser.parse_args()
+
+
+    with open("example.yaml", 'r') as file:
+        config = yaml.safe_load(args.config)
 
     ray.init()
 
@@ -50,6 +57,7 @@ if __name__ == '__main__':
             "clip_param": tune.uniform(0.1, 0.5),
             "lr": tune.loguniform(1e-3, 1e-5),
             "entropy_coeff": tune.loguniform(2e-4, 5e-1),
+            "kl_target": tune.loguniform(0.01, 0.1)
         },
         custom_explore_fn=explore)
 
@@ -57,39 +65,6 @@ if __name__ == '__main__':
         local_dir=args.logdir,
         name="flow_tunev1",
         num_samples=args.samples,
-        stop={'episode_reward_mean': 400, "timesteps_total": 3e6}, # This is convergence for this version of half cheta
-        config={
-            "env": "HalfCheetahPyBulletEnv-v0",
-            "num_workers": 10,
-            "num_envs_per_worker":2,
-            "framework": "torch",
-            "horizon": 1000,
-            "num_gpus": 1.0,
-            "remote_worker_envs": True,
-            "train_batch_size": 60000,
-            "sgd_minibatch_size": 8192,
-            "observation_filter": "MeanStdFilter",
-            "lambda": 0.99,
-            "gamma": 0.95,
-
-            # TUNED
-            #"clip_param": 0.26,
-            #"lr": 4e-4,
-            #"entropy_coeff": 3e-3,
-            # TUNED
-
-            "model": {
-                "custom_model": "flow_model",
-                "custom_action_dist": "flow_dist",
-                "vf_share_layers": False,
-                "fcnet_activation": "relu",
-                "free_log_std": True,
-                "fcnet_hiddens": [64, 64],
-                "custom_model_config": {
-                    "monte_samples": 10,
-                    "coupling_hidden_size": 3,
-                    "coupling_hidden_layers": 4,
-                    "num_flow_layers": 4, 
-                    "inject_state_after":2,
-                },
-            }}, scheduler=pbt)
+        stop={'episode_reward_mean': 650, "timesteps_total": 3e6}, # This is convergence for this version of half cheta
+        config=config, 
+        scheduler=pbt)
