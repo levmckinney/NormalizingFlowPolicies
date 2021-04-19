@@ -2,6 +2,7 @@ from logging import NOTSET
 from typing import List
 from ray.rllib.models import ModelCatalog
 from ray.rllib.models.torch.fcnet import FullyConnectedNetwork
+from ray.rllib.utils.numpy import SMALL_NUMBER
 from torch.distributions.transforms import Transform, ComposeTransform
 from torch.distributions import constraints
 from ray.rllib.utils.typing import ModelConfigDict
@@ -86,10 +87,10 @@ class CouplingLayer(FlowLayer):
         if inverse_mode:
             assert trans.shape == t.shape, f"{t.shape}, {trans.shape}, {x.shape}"
             trans = (trans - t) * torch.exp(-s)
-            log_abs_det = torch.sum(s, dim=-1)
+            log_abs_det = -torch.sum(s, dim=-1)
         else:
             trans = trans * torch.exp(s) + t
-            log_abs_det = -torch.sum(s, dim=-1)
+            log_abs_det = torch.sum(s, dim=-1)
         x = self._pack(ident, trans)
         return x, log_abs_det
 
@@ -128,6 +129,24 @@ class ConditionalCouplingFlow(FlowLayer):
     def forward(self, x, inverse_mode=False, context=None):
         return self.inner(x, inverse_mode, context)
 
+class TanhSquashLayer(FlowLayer):
+    def __init__(self, dimension: int, high: torch.Tensor, low: torch.Tensor):
+        super().__init__(dimension)
+        self.register_buffer('range', (high - low).clone())
+        self.register_buffer('low', low.clone())
+
+    def _log_abs_det_jac(self, squashed: torch.Tensor):
+        return (torch.log((1 - squashed**2 +  SMALL_NUMBER)) + torch.log(torch.abs(self.range)/2)).sum(-1)
+
+    def forward(self, z, inverse_mode=False, context=None):
+        if inverse_mode:
+            squashed = 2*(z - self.low)/self.range - 1
+            return torch.atanh(torch.clip(z, -1 + SMALL_NUMBER, 1 - SMALL_NUMBER)), -self._log_abs_det_jac(squashed)
+        else:            
+            squashed = torch.tanh(z)
+            squashed01 = (squashed + 1)/2
+            return squashed01*self.range + self.low, self._log_abs_det_jac(squashed)
+
 class NormalizingFlowsPolicy(FullyConnectedNetwork):
     # https://github.com/ray-project/ray/blob/be62444bc5924c61d69bb6aec62f967e531e768c/rllib/examples/models/autoregressive_action_model.py#L87
     def __init__(self, obs_space: gym.spaces.Space,
@@ -138,11 +157,21 @@ class NormalizingFlowsPolicy(FullyConnectedNetwork):
         self.coupling_hidden_layers = model_config['custom_model_config'].get('coupling_hidden_layers')
         self.num_flow_layers = model_config['custom_model_config'].get('num_flow_layers')
         self.inject_state_after = model_config['custom_model_config'].get('inject_state_after')
-        self.flow = ConditionalCouplingFlow(
+        self.coupling_flow = ConditionalCouplingFlow(
             num_outputs, 
             self.num_flow_layers, 
             self.coupling_hidden_size,
             self.coupling_hidden_layers, 
             self.inject_state_after)
+        
+        if action_space.is_bounded:
+            high = torch.from_numpy(action_space.high)
+            low = torch.from_numpy(action_space.low)
+            self.flow = ComposeFlows([
+                self.coupling_flow,
+                TanhSquashLayer(num_outputs, high, low)
+                ])
+        else:
+            self.flow = self.coupling_flow
 
 ModelCatalog.register_custom_model("flow_model", NormalizingFlowsPolicy)

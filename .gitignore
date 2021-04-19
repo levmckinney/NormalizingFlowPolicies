@@ -1,6 +1,6 @@
 # Custom
 .vscode
-ray_results
+ray_results*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

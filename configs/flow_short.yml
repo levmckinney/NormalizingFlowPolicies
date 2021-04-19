@@ -7,26 +7,31 @@ num_gpus: 1.0
 num_workers: 10
 remote_worker_envs: True
 num_envs_per_worker: 2
-train_batch_size: 60000
-sgd_minibatch_size: 4096
+train_batch_size: 4000
+num_sgd_iter: 10
+sgd_minibatch_size: 64
 
 lambda: 0.99
 gamma: 0.95
-
 # TUNED
-kl_target: 0.003
-clip_param: 0.5
-lr: 0.02
-entropy_coeff: 0.0004
+kl_target: 0.007
+clip_param: 0.2
+lr: 0.0002
+entropy_coeff: 0.012
 kl_coeff: 1.0
 # TUNED
 
 model: 
-    custom_action_dist: gmm
+    custom_model: flow_model
+    custom_action_dist: flow_dist
     vf_share_layers: False
     fcnet_activation: relu
     free_log_std: True
     fcnet_hiddens: [64, 64]
     custom_model_config: 
-        num_gaussians: 5
         monte_samples: 10
+        coupling_hidden_size: 3
+        coupling_hidden_layers: 4
+        num_flow_layers: 4
+        inject_state_after: 1
+    

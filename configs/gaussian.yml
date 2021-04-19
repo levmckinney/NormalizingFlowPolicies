@@ -14,19 +14,15 @@ lambda: 0.99
 gamma: 0.95
 
 # TUNED
-kl_target: 0.003
-clip_param: 0.5
-lr: 0.02
-entropy_coeff: 0.0004
+kl_target: 0.01
+clip_param: 0.2
+lr: 0.0002
+entropy_coeff: 0.2
 kl_coeff: 1.0
 # TUNED
 
 model: 
-    custom_action_dist: gmm
     vf_share_layers: False
     fcnet_activation: relu
     free_log_std: True
     fcnet_hiddens: [64, 64]
-    custom_model_config: 
-        num_gaussians: 5
-        monte_samples: 10

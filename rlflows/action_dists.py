@@ -59,7 +59,7 @@ class TorchGaussianMixtureDistribution(TorchDistributionWrapper):
         """ KL(self || q) estimated with monte carlo sampling
         """
         rsamples = self.__rsamples().unbind(0)
-        log_ratios = torch.stack([q.logp(rsample) - self.logp(rsample) for rsample in rsamples])
+        log_ratios = torch.stack([self.logp(rsample) - q.logp(rsample) for rsample in rsamples])
         assert not torch.isnan(log_ratios).any(), "output nan aborting"
         return log_ratios.mean(0)
 
@@ -103,6 +103,7 @@ class TorchFlowDistribution(TorchDistributionWrapper):
     
     def logp(self, actions: torch.Tensor) -> torch.Tensor:
         z, log_abs_det = self.model.flow(actions, context=self.inputs, inverse_mode=True)
+        assert not torch.isnan(z).any()
         logp = self.base_dist.log_prob(z).sum(-1)
         return logp + log_abs_det
 
@@ -127,7 +128,7 @@ class TorchFlowDistribution(TorchDistributionWrapper):
         """
         rsamples, logps = self.__rsamples_logps()
         logp_rsamples = zip(logps.unbind(0), rsamples.unbind(0))
-        log_ratios = torch.stack([q.logp(rsample) - logp for (logp, rsample) in logp_rsamples])
+        log_ratios = torch.stack([logp - q.logp(rsample) for (logp, rsample) in logp_rsamples])
         assert not torch.isnan(log_ratios).any(), "output nan aborting"
         return log_ratios.mean(0)
 
