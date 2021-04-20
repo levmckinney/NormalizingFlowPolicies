@@ -24,8 +24,10 @@ def train():
     parser.add_argument('--name', type=str)
     parser.add_argument('--logdir', type=str)
     parser.add_argument('--config', type=str)
-    parser.add_argument('--checkpoint_freq', )
-    parser.add_argument('--tune', action='store_true')
+    parser.add_argument('--keep_checkpoints_num', type=int, default=1)
+    parser.add_argument('--checkpoint_freq', type=int, default=0)
+    parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--pbt', action='store_true')
     parser.add_argument('--samples', type=int, default=10)
     parser.add_argument('--t_ready', type=int, default=50000)
     parser.add_argument('--perturb', type=float, default=0.25)
@@ -53,12 +55,14 @@ def train():
         custom_explore_fn=explore)
 
     tune.run(rlflows.CustomKLUpdatePPOTrainer,
-        checkpoint_freq=1,
+        checkpoint_freq=args.checkpoint_freq,
         local_dir=args.logdir,
         name=args.name,
+        resume=args.resume,
         num_samples=args.samples,
         stop={'episode_reward_mean': 2800, "timesteps_total": 1e7}, # This is convergence for this version of half cheta
-        config=config, 
+        config=config,
+        keep_checkpoints_num=args.keep_checkpoints_num,
         scheduler=(pbt if args.tune else None))
 
 
