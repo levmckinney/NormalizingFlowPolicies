@@ -157,6 +157,7 @@ class NormalizingFlowsPolicy(FullyConnectedNetwork):
         self.coupling_hidden_layers = model_config['custom_model_config'].get('coupling_hidden_layers')
         self.num_flow_layers = model_config['custom_model_config'].get('num_flow_layers')
         self.inject_state_after = model_config['custom_model_config'].get('inject_state_after')
+        self.enable_squash_layer = model_config['custom_model_config'].get('enable_squash_layer', True)
         self.coupling_flow = ConditionalCouplingFlow(
             num_outputs, 
             self.num_flow_layers, 
@@ -164,7 +165,7 @@ class NormalizingFlowsPolicy(FullyConnectedNetwork):
             self.coupling_hidden_layers, 
             self.inject_state_after)
         
-        if action_space.is_bounded:
+        if action_space.is_bounded and self.enable_squash_layer:
             high = torch.from_numpy(action_space.high)
             low = torch.from_numpy(action_space.low)
             self.flow = ComposeFlows([

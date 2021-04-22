@@ -24,6 +24,7 @@ def train():
     parser.add_argument('--name', type=str)
     parser.add_argument('--logdir', type=str)
     parser.add_argument('--config', type=str)
+    parser.add_argument('--stop_after_ts', default=1e6)
     parser.add_argument('--keep_checkpoints_num', type=int, default=1)
     parser.add_argument('--checkpoint_freq', type=int, default=0)
     parser.add_argument('--resume', action='store_true')
@@ -60,10 +61,10 @@ def train():
         name=args.name,
         resume=args.resume,
         num_samples=args.samples,
-        stop={'episode_reward_mean': 2800, "timesteps_total": 1e7}, # This is convergence for this version of half cheta
+        stop={"timesteps_total": 1e7}, # This is convergence for this version of half cheta
         config=config,
         keep_checkpoints_num=args.keep_checkpoints_num,
-        scheduler=(pbt if args.tune else None))
+        scheduler=(pbt if args.pbt else None))
 
 
 if __name__ == '__main__':

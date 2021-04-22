@@ -14,10 +14,11 @@ lambda: 0.99
 gamma: 0.95
 
 # TUNED
-kl_target: 0.003
-clip_param: 0.5
-lr: 0.02
-entropy_coeff: 0.0004
+kl_target: 0.01
+clip_param: 0.2
+lr: 0.0002
+#lr_schedule: [[0, 0.0004], [10000000, 0.00004]]
+#entropy_coeff_schedule: [[0, 0.1], [10000000, 0.001]]
 kl_coeff: 1.0
 # TUNED
 
