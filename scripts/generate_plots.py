@@ -9,10 +9,12 @@ if __name__ == '__main__':
     parser.add_argument('--runs', '-r', nargs='+', required=True)
     parser.add_argument('--names', '-n', nargs='+')
     parser.add_argument('--xaxis', '-x', default='time step')
-    parser.add_argument('--yaxis', '-y', default="mean reward")
+    parser.add_argument('--yaxis', '-y', default="reward")
+    parser.add_argument('--reduce', '-u', default="median")
     parser.add_argument('--save_to', '-s', default='out.png')
-    parser.add_argument('--title', '-t', default='title')
+    parser.add_argument('--title', '-t', default=None)
     args = parser.parse_args()
+
 
     if args.names is None:
         names = [os.path.basename(path) for path in args.runs]
@@ -32,15 +34,21 @@ if __name__ == '__main__':
             else:
                 assert (timestep == table['Step']).all(), 'All runs to be aggregated must share timesteps'    
             values.append(table['Value'])
-        
         values = np.vstack(values)
-        std = np.std(values, axis=0)
-        mean = np.mean(values, axis=0)
-        plt.plot(timestep, mean, label=f'{name} (N={values.shape[0]})')
-        plt.fill_between(timestep, mean - std, mean + std, alpha=0.6)
-
+        if args.reduce == 'mean':
+            std = np.std(values, axis=0)
+            mean = np.mean(values, axis=0)
+            plt.plot(timestep, mean, label=f'{name} (N={values.shape[0]})')
+            plt.fill_between(timestep, mean - std, mean + std, alpha=0.6)
+        elif args.reduce == 'median':
+            median = np.median(values, axis=0)
+            low_quartile = np.quantile(values, 0, axis=0)
+            upper_quintile = np.quantile(values, 1, axis=0)
+            plt.plot(timestep, median, label=f'{name} (N={values.shape[0]})')
+            plt.fill_between(timestep, low_quartile, upper_quintile, alpha=0.4)
+    plt.title(args.title)
     plt.xlabel(args.xaxis)
-    plt.ylabel(args.yaxis)
+    plt.ylabel(f'{args.reduce} {args.yaxis}')
     plt.legend(loc='upper left')
 
     plt.savefig(args.save_to)

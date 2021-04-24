@@ -21,17 +21,17 @@ def explore(config):
 
 def train():
     parser = ArgumentParser()
-    parser.add_argument('--name', type=str)
-    parser.add_argument('--logdir', type=str)
-    parser.add_argument('--config', type=str)
-    parser.add_argument('--stop_after_ts', default=1e6)
-    parser.add_argument('--keep_checkpoints_num', type=int, default=1)
-    parser.add_argument('--checkpoint_freq', type=int, default=0)
-    parser.add_argument('--resume', action='store_true')
-    parser.add_argument('--pbt', action='store_true')
-    parser.add_argument('--samples', type=int, default=10)
-    parser.add_argument('--t_ready', type=int, default=50000)
-    parser.add_argument('--perturb', type=float, default=0.25)
+    parser.add_argument('--name', type=str, help="name of the experiment")
+    parser.add_argument('--logdir', type=str, help="directory to place checkpoints and tensorboard logs")
+    parser.add_argument('--config', type=str, help="yaml config file see configs folder for examples")
+    parser.add_argument('--stop_after_ts', default=1e7, help="maximum number of timesteps to train for")
+    parser.add_argument('--keep_checkpoints_num', type=int, default=1, help="see tune docs")
+    parser.add_argument('--checkpoint_freq', type=int, default=0, help="see tune docs")
+    parser.add_argument('--resume', action='store_true', help="resume if run with the same name exists already in logdir")
+    parser.add_argument('--pbt', action='store_true', help="enable population based training")
+    parser.add_argument('--samples', type=int, default=10, help="number of runs to preform with this config")
+    parser.add_argument('--t_ready', type=int, default=50000, help="how often to mutate in pbt")
+    parser.add_argument('--perturb', type=float, default=0.25, help="portion of runs to preturb")
     args, _ = parser.parse_known_args()
 
     with open(args.config, 'r') as file:
@@ -61,7 +61,7 @@ def train():
         name=args.name,
         resume=args.resume,
         num_samples=args.samples,
-        stop={"timesteps_total": 1e7}, # This is convergence for this version of half cheta
+        stop={"timesteps_total": args.stop_after_ts},
         config=config,
         keep_checkpoints_num=args.keep_checkpoints_num,
         scheduler=(pbt if args.pbt else None))

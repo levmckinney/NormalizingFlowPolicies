@@ -1,3 +1,3 @@
 from .action_dists import TorchGaussianMixtureDistribution
-from .envs import env_creator
+from .envs import cheetah_env_creator, ant_env_creator
 from .custom_trainer import CustomKLUpdatePPOTrainer
