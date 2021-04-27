@@ -1,3 +1,4 @@
+import os
 import ray
 import rlflows
 from argparse import ArgumentParser
@@ -55,11 +56,17 @@ def train():
         },
         custom_explore_fn=explore)
 
+    resume = args.resume
+    if resume:
+        experiment_path = os.path.join(args.logdir, args.name)
+        if not os.path.exists(experiment_path):
+            resume = False # first run don't try and resume
+
     tune.run(rlflows.CustomKLUpdatePPOTrainer,
         checkpoint_freq=args.checkpoint_freq,
         local_dir=args.logdir,
         name=args.name,
-        resume=args.resume,
+        resume=resume,
         num_samples=args.samples,
         stop={"timesteps_total": args.stop_after_ts},
         config=config,
